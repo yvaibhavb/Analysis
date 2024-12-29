@@ -36,13 +36,50 @@ def build_lstm(input_shape):
     model.compile(optimizer='adam', loss='mean_squared_error')
     return model
 
-# Train and predict using LSTM
-def predict_stock_prices_lstm():
+def optimize_lookback(data, lookback_values):
+    best_lookback = None
+    best_rmse = float('inf')
+    
+    for lookback in lookback_values:
+        X, y, scaler = prepare_data(data, lookback=lookback)
+        
+        # Split into training and testing sets
+        split = int(0.8 * len(X))
+        X_train, X_test = X[:split], X[split:]
+        y_train, y_test = y[:split], y[split:]
+        
+        # Build and train the model
+        model = build_lstm((X_train.shape[1], 1))
+        model.fit(X_train, y_train, epochs=20, batch_size=16, verbose=0)
+        
+        # Make predictions
+        predictions = model.predict(X_test)
+        predictions = scaler.inverse_transform(predictions.reshape(-1, 1))
+        actual = scaler.inverse_transform(y_test.reshape(-1, 1))
+        
+        # Calculate RMSE
+        rmse = np.sqrt(mean_squared_error(actual, predictions))
+        print(f"Lookback: {lookback}, RMSE: {rmse:.2f}")
+        
+        # Update best lookback
+        if rmse < best_rmse:
+            best_rmse = rmse
+            best_lookback = lookback
+    
+    print(f"Best Lookback: {best_lookback}, Best RMSE: {best_rmse:.2f}")
+    return best_lookback
+
+# Run the optimization
+data = fetch_data()
+lookback_values = [3, 5, 7, 10]
+best_lookback = optimize_lookback(data, lookback_values)
+
+# Use the best lookback value for final prediction
+def predict_stock_prices_lstm(best_lookback):
     data = fetch_data()
     
     # Prepare data
-    lookback = 5
-    X, y, scaler = prepare_data(data, lookback=lookback)
+    X, y, scaler = prepare_data(data, lookback=best_lookback)
     
     # Split into training and testing sets
     split = int(0.8 * len(X))
@@ -63,20 +100,21 @@ def predict_stock_prices_lstm():
     print(f"Root Mean Squared Error (RMSE): {rmse:.2f}")
     
     # Predict the next day's price
-    last_sequence = X[-1].reshape(1, lookback, 1)
+    last_sequence = X[-1].reshape(1, best_lookback, 1)
     next_day_scaled = model.predict(last_sequence)
     next_day_price = scaler.inverse_transform(next_day_scaled.reshape(-1, 1))[0, 0]
     print(f"Predicted next day price: {next_day_price:.2f}")
     
     # Visualize results
+    dates = data.index[-len(actual):]  # Get the dates for the test set
     plt.figure(figsize=(10, 6))
-    plt.plot(range(len(actual)), actual, color='blue', label='Actual Prices')
-    plt.plot(range(len(predictions)), predictions, color='red', label='Predicted Prices')
-    plt.xlabel('Time')
+    plt.plot(dates, actual, color='blue', label='Actual Prices')
+    plt.plot(dates, predictions, color='red', label='Predicted Prices')
+    plt.xlabel('Date')
     plt.ylabel('Stock Price')
-    plt.title('Microsoft Stock Prices: Actual vs Predicted')
+    plt.title('Google Stock Prices: Actual vs Predicted')
     plt.legend()
     plt.show()
 
-# Run the LSTM prediction
-predict_stock_prices_lstm()
+# Run the final prediction with the best lookback value
+predict_stock_prices_lstm(best_lookback)
